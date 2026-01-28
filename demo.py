@@ -33,8 +33,12 @@ class Actor(nn.Module):
         normal = torch.distributions.Normal(mu, std)
         z = normal.rsample()  # Reparameterization trick
         action = torch.tanh(z) * self.max_action # Scale action to the environment's action range
-        log_prob = normal.log_prob(z) - torch.log(1 - action.pow(2) + 1e-6) # Correction for Tanh squashing
-        log_prob = log_prob.sum(1, keepdim=True)
+        
+        #! Look for correct log prob calculation 
+        log_prob = normal.log_prob(z)
+        log_prob_minus= torch.log(1 - action.pow(2) + 1e-6) # Correction for Tanh squashing
+        log_prob = log_prob - log_prob_minus
+        log_prob = log_prob.sum(-1, keepdim=True)
         return action, log_prob
     
 # Define the Critic network
@@ -87,12 +91,18 @@ class SACAgent:
         state = torch.FloatTensor(state).to(self.device)
         
         if evaluate:
+
+            #! This can be optimized further: refactor to avoid code duplication
             mu, _ = self.actor.forward(state)
             action = torch.tanh(mu) * self.actor.max_action
-            return action.cpu().data.numpy()
+            return action.cpu().data.numpy() # Return action for evaluation
         else:
             action, _ = self.actor.sample(state)
             return action.cpu().data.numpy()
+        
+    
+        
+
         
 #--------- Test the SAC Agent and choose_action using dummy data ---------#
 
