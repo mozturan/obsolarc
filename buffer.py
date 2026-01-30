@@ -8,21 +8,21 @@ class AbstractReplayBuffer(ABC):
     Abstract class for replay buffer
     """
     @abstractmethod
-    def store_transition(self, state, action, reward, state_, done):
+    def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float, state_: np.ndarray, done: bool) -> None:
         """
         Store a new transition
         """
         pass
 
     @abstractmethod
-    def sample_buffer(self, batch_size, priority_scale=1.0):
+    def sample_buffer(self, batch_size:int, priority_scale:float=1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
         Sample a batch of transitions from the buffer
         """
         pass
 
     @abstractmethod
-    def __len__(self):
+    def __len__(self) -> int:
         """
         Return the number of stored transitions
         """
@@ -46,7 +46,7 @@ class ReplayBuffer(AbstractReplayBuffer):
         self.done_memory = np.zeros((self.max_size, 1), dtype=bool)
     
     # Store a new transition in the buffer
-    def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float, state_: np.ndarray, done: bool):
+    def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float, state_: np.ndarray, done: bool) -> None:
         self.state_memory[self.ptr] = state
         self.action_memory[self.ptr] = action
         self.reward_memory[self.ptr] = reward
@@ -73,7 +73,7 @@ class ReplayBuffer(AbstractReplayBuffer):
     def __len__(self) -> int:
         return self.size
     
-    def save(self, filename: str):
+    def save(self, filename: str) -> None:
         np.savez_compressed(
             filename,
             state_memory=self.state_memory,
@@ -85,7 +85,7 @@ class ReplayBuffer(AbstractReplayBuffer):
             size=self.size
         )
 
-    def load(self, filename: str):
+    def load(self, filename: str) -> None:
         data = np.load(filename)
         self.state_memory = data['state_memory']
         self.action_memory = data['action_memory']

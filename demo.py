@@ -1,6 +1,7 @@
 # A SAC implementation using PyTorch for a simple continuous control task
 
 import gc
+from click import Tuple
 import torch # PyTorch library
 import torch.nn as nn # Neural network module
 import torch.optim as optim # Optimization algorithms
@@ -12,8 +13,8 @@ from buffer import ReplayBuffer # Import ReplayBuffer from buffer.py
 class Actor(nn.Module):
 
     # Initialize the Actor network
-    def __init__(self, state_dim, action_dim, hidden_dim,max_action):
-        super(Actor, self).__init__()
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, max_action: float):
+        super(Actor, self).__init__() #?? Initialize parent class
         self.fc1 = nn.Linear(state_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.mu_head = nn.Linear(hidden_dim, action_dim)
@@ -21,7 +22,7 @@ class Actor(nn.Module):
         self.max_action = max_action
 
     # Define the forward pass
-    def forward(self, state):
+    def forward(self, state: torch.Tensor):
         x = torch.relu(self.fc1(state))
         x = torch.relu(self.fc2(x))
         mu = self.mu_head(x)
@@ -30,7 +31,7 @@ class Actor(nn.Module):
         std = torch.exp(log_std)    
         return mu, std # Return mean and standard deviation of action distribution
     
-    def sample(self, state):
+    def sample(self, state: torch.Tensor) : 
         mu, std = self.forward(state)
         normal = torch.distributions.Normal(mu, std)
         z = normal.rsample()  # Reparameterization trick
@@ -47,14 +48,14 @@ class Actor(nn.Module):
 class Critic(nn.Module):
 
     # Initialize the Critic network
-    def __init__(self, state_dim, action_dim, hidden_dim):
-        super(Critic, self).__init__()
+    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int):
+        super(Critic, self).__init__() # ?? Initialize parent class
         self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.q_head = nn.Linear(hidden_dim, 1)
 
     # Define the forward pass
-    def forward(self, state, action):
+    def forward(self, state: torch.Tensor, action: torch.Tensor):
         x = torch.relu(self.fc1(torch.cat([state, action], 1)))
         x = torch.relu(self.fc2(x))
         q_value = self.q_head(x)
@@ -62,11 +63,11 @@ class Critic(nn.Module):
     
 # Soft Actor-Critic (SAC) Agent
 class SACAgent:
-    def __init__(self, state_dim, action_dim, 
-                 buffer_size=int(1e6), min_buffer_size=1000,
-                 batch_size=256, hidden_dim=256, max_action=1.0,
-                 actor_lr=3e-4, critic_lr=3e-4,
-                 gamma=0.99, tau=0.005, alpha=0.2):
+    def __init__(self, state_dim: int, action_dim: int, 
+                 buffer_size: int=int(1e6), min_buffer_size: int=1000,
+                 batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
+                 actor_lr: float=3e-4, critic_lr: float=3e-4,
+                 gamma: float=0.99, tau: float=0.005, alpha: float=0.2):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -101,32 +102,34 @@ class SACAgent:
         self.alpha = alpha # Entropy coefficient
 
     # Select action based on current policy
-    def choose_action(self, state, evaluate=False):
-        state = torch.FloatTensor(state).to(self.device)
+    def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
+        state_tensor = torch.as_tensor(state)
+        #! state = torch.FloatTensor(state).to(self.device) # Convert state to tensor
+        #! state = state.unsqueeze(0)  # Add batch dimension
         
         if evaluate:
 
             #! This can be optimized further: refactor to avoid code duplication
-            mu, _ = self.actor.forward(state)
+            mu, _ = self.actor.forward(state_tensor)
             action = torch.tanh(mu) * self.actor.max_action
             return action.cpu().data.numpy() # Return action for evaluation
         else:
-            action, _ = self.actor.sample(state)
+            action, _ = self.actor.sample(state_tensor)
             return action.cpu().data.numpy()
         
     # Soft update target networks
-    def soft_update(self, net, target_net):
+    def soft_update(self, net: torch.nn.Module, target_net: torch.nn.Module) -> None:
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
     # Update the SAC agent
-    def train(self, replay_buffer, batch_size=256):
+    def train(self) -> None:
         
         if self.replay_buffer.size < self.min_buffer_size:
             return  # Not enough data to train
         
         # Sample a batch of transitions from the replay buffer
-        state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+        state, action, reward, next_state, done = self.replay_buffer.sample_buffer(self.batch_size)
 
         # Convert to PyTorch tensors
         state = torch.FloatTensor(state).to(self.device)
@@ -185,20 +188,19 @@ class SACAgent:
     
         # Clear memory cache just in case
         gc.collect()
+        torch.cuda.empty_cache() #? Does this work? 
 
-        
 
-        
 #--------- Test the SAC Agent and choose_action using dummy data ---------#
 
 if __name__ == "__main__":
     env = gym.make("Pendulum-v1") # Create environment: Testing gymnasium's Pendulum-v1
-    state_dim = env.observation_space.shape[0] # State dimension
-    action_dim = env.action_space.shape[0] # Action dimension
-    max_action = float(env.action_space.high[0]) # Maximum action value
+    # state_dim = env.observation_space.shape[0] # State dimension
+    # action_dim = env.action_space.shape[0] # Action dimension
+    # max_action = float(env.action_space.high[0]) # Maximum action value
 
-    agent = SACAgent(state_dim, action_dim, max_action=max_action) # Initialize SAC agent
+    # agent = SACAgent(state_dim, action_dim, max_action=max_action) # Initialize SAC agent
 
-    state, _ = env.reset() # Reset environment
-    action = agent.choose_action(state) # Choose action using the agent
-    print("Chosen action:", action) # Print chosen action
+    # state, _ = env.reset() # Reset environment
+    # action = agent.choose_action(state) # Choose action using the agent
+    # print("Chosen action:", action) # Print chosen action
