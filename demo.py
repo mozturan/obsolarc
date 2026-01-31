@@ -1,11 +1,13 @@
 # A SAC implementation using PyTorch for a simple continuous control task
 
+import gymnasium as gym # Gymnasium for environments
+from gymnasium.spaces import Box
+
 import gc
 from click import Tuple
 import torch # PyTorch library
 import torch.nn as nn # Neural network module
 import torch.optim as optim # Optimization algorithms
-import gymnasium as gym # Gymnasium for environments
 import numpy as np # NumPy for numerical operations
 from buffer import ReplayBuffer # Import ReplayBuffer from buffer.py
 
@@ -23,8 +25,28 @@ class Actor(nn.Module):
 
     # Define the forward pass
     def forward(self, state: torch.Tensor):
+        # check for NaNs in input state
+        if torch.isnan(state).any():
+            print("NaN detected in input state!")
+            print("Input state:", state)
+
+        # check for infinities in input state
+        if torch.isinf(state).any():
+            print("Infinity detected in input state!")
+            print("Input state:", state)
+
         x = torch.relu(self.fc1(state))
+        if torch.isnan(x).any():
+            print("NaN detected after fc1!")
+            print("Output after fc1:", x)
+
+
         x = torch.relu(self.fc2(x))
+        if torch.isnan(x).any():
+            print("NaN detected after fc2!")
+            print("Output after fc2:", x)
+
+
         mu = self.mu_head(x)
         log_std = self.log_std_head(x)
         log_std = torch.clamp(log_std, -20, 2)  #! Limit log_std to avoid numerical issues
@@ -65,8 +87,8 @@ class Critic(nn.Module):
 class SACAgent:
     def __init__(self, state_dim: int, action_dim: int, 
                  buffer_size: int=int(1e6), min_buffer_size: int=1000,
-                 batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
-                 actor_lr: float=3e-4, critic_lr: float=3e-4,
+                 batch_size: int=256, hidden_dim: int=16, max_action: float=1.0,
+                 actor_lr: float=1e-6, critic_lr: float=1e-5,
                  gamma: float=0.99, tau: float=0.005, alpha: float=0.2):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -103,8 +125,8 @@ class SACAgent:
 
     # Select action based on current policy
     def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
-        state_tensor = torch.as_tensor(state)
-        #! state = torch.FloatTensor(state).to(self.device) # Convert state to tensor
+        state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) #? What unsqueeze
+        #? state_x = torch.FloatTensor(state).float().to(self.device) # Convert state to tensor
         #! state = state.unsqueeze(0)  # Add batch dimension
         
         if evaluate:
@@ -128,6 +150,7 @@ class SACAgent:
         if self.replay_buffer.size < self.min_buffer_size:
             return  # Not enough data to train
         
+        print("Training step started.")
         # Sample a batch of transitions from the replay buffer
         state, action, reward, next_state, done = self.replay_buffer.sample_buffer(self.batch_size)
 
@@ -188,19 +211,49 @@ class SACAgent:
     
         # Clear memory cache just in case
         gc.collect()
-        torch.cuda.empty_cache() #? Does this work? 
+        # torch.cuda.empty_cache() #? Does this work? 
+        print("Training step completed.")
 
 
 #--------- Test the SAC Agent and choose_action using dummy data ---------#
 
 if __name__ == "__main__":
     env = gym.make("Pendulum-v1") # Create environment: Testing gymnasium's Pendulum-v1
-    # state_dim = env.observation_space.shape[0] # State dimension
-    # action_dim = env.action_space.shape[0] # Action dimension
-    # max_action = float(env.action_space.high[0]) # Maximum action value
+    
+    # print("obs space:", env.observation_space)  # should be a Box with shape (3,)
+    # print("act space:", env.action_space)       # should be a Box with high ≈ [2.]
 
-    # agent = SACAgent(state_dim, action_dim, max_action=max_action) # Initialize SAC agent
+    # Get state and action dimensions
+    state_space = env.observation_space.shape # (3,)
+    if isinstance(state_space, tuple):
+        state_shape = int(state_space[0])  # Adjust index as necessary
+    else:
+        raise ValueError("env.observation_space.shape is not a tuple. Make sure your environment uses continuous states.")
 
-    # state, _ = env.reset() # Reset environment
-    # action = agent.choose_action(state) # Choose action using the agent
-    # print("Chosen action:", action) # Print chosen action
+    action_space = env.action_space.shape # (1,)
+    if isinstance(action_space, tuple):
+        action_shape = int(action_space[0])  # Adjust index as necessary
+    else:
+        raise ValueError("env.action_space.shape is not a tuple. Make sure your environment uses continuous actions.")
+
+    # Get maximum action value
+    if isinstance(env.action_space, Box):
+        max_action = float(env.action_space.high[0])  # Maximum action value
+    else:
+        raise ValueError("env.action_space is not a Box space. Make sure your environment uses continuous actions.")
+
+    agent = SACAgent(state_shape, action_shape, max_action=max_action, 
+                     min_buffer_size=100, batch_size=32) # Initialize SAC agent
+
+    state, _ = env.reset() # Reset environment
+    action = agent.choose_action(state) # Choose action using the agent
+    print("Chosen action:", action) # Print chosen action
+
+    for i in range(5000): # Run for 5 steps
+        next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
+        done = terminated or truncated
+        agent.replay_buffer.store_transition(state, action, float(reward), next_state, done) # Store transition in replay buffer
+        state = next_state # Update state
+        action = agent.choose_action(state) # Choose next action
+        print(f"Step {i+1}, Chosen action: {action}") # Print chosen action
+        agent.train() # Train the agent
