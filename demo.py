@@ -1,5 +1,6 @@
 # A SAC implementation using PyTorch for a simple continuous control task
 
+import time
 import gymnasium as gym # Gymnasium for environments
 from gymnasium.spaces import Box
 
@@ -149,16 +150,15 @@ class SACAgent:
         if self.replay_buffer.size < self.min_buffer_size:
             return  # Not enough data to train
         
-        print("Training step started.")
         # Sample a batch of transitions from the replay buffer
         state, action, reward, next_state, done = self.replay_buffer.sample_buffer(self.batch_size)
 
         # Convert to PyTorch tensors
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).unsqueeze(1).to(self.device)
+        reward = torch.FloatTensor(reward).view(-1, 1).to(self.device)
         next_state = torch.FloatTensor(next_state).to(self.device)
-        done = torch.FloatTensor(done).unsqueeze(1).to(self.device)
+        done = torch.FloatTensor(done).view(-1, 1).to(self.device)
 
         # Update Critic networks
         with torch.no_grad(): # No gradient calculation for target
@@ -212,13 +212,13 @@ class SACAgent:
         # Clear memory cache just in case
         gc.collect()
         # torch.cuda.empty_cache() #? Does this work? 
-        print("Training step completed.")
 
 
 #--------- Test the SAC Agent and choose_action using dummy data ---------#
 
 if __name__ == "__main__":
-    env = gym.make("Pendulum-v1") # Create environment: Testing gymnasium's Pendulum-v1
+    env = gym.make("MountainCarContinuous-v0", render_mode="human", 
+                   goal_velocity=1.0) # Create environment: Testing gymnasium's Pendulum-v1
     
     # print("obs space:", env.observation_space)  # should be a Box with shape (3,)
     # print("act space:", env.action_space)       # should be a Box with high ≈ [2.]
@@ -242,18 +242,25 @@ if __name__ == "__main__":
     else:
         raise ValueError("env.action_space is not a Box space. Make sure your environment uses continuous actions.")
 
-    agent = SACAgent(state_shape, action_shape, max_action=max_action, 
-                     min_buffer_size=100, batch_size=32) # Initialize SAC agent
+    agent = SACAgent(state_shape, action_shape, max_action=max_action) # Initialize SAC agent
 
     state, _ = env.reset() # Reset environment
     action = agent.choose_action(state) # Choose action using the agent
     print("Chosen action:", action) # Print chosen action
 
-    for i in range(5000): # Run for 5 steps
+    for i in range(50000): # Run for 5 steps
         next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
         done = terminated or truncated
         agent.replay_buffer.store_transition(state, action, float(reward), next_state, done) # Store transition in replay buffer
         state = next_state # Update state
         action = agent.choose_action(state) # Choose next action
-        print(f"Step {i+1}, Chosen action: {action}") # Print chosen action
         agent.train() # Train the agent
+        print(f"Step {i+1} completed. Reward: {reward}")
+        # if done:
+        #     state, _ = env.reset() # Reset environment if done
+        #     print("Environment reset.")
+        #     time.sleep(5)
+        
+
+
+    env.close()
