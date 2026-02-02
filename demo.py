@@ -3,6 +3,7 @@
 import time
 import gymnasium as gym # Gymnasium for environments
 from gymnasium.spaces import Box
+import highway_env  # <--- This line is the magic fix!
 
 import gc
 from click import Tuple
@@ -217,9 +218,9 @@ class SACAgent:
 #--------- Test the SAC Agent and choose_action using dummy data ---------#
 
 if __name__ == "__main__":
-    env = gym.make("MountainCarContinuous-v0", render_mode="human", 
-                   goal_velocity=1.0) # Create environment: Testing gymnasium's Pendulum-v1
-    
+    # env = gym.make("MountainCarContinuous-v0", render_mode="human", 
+    #                goal_velocity=1.0) # Create environment: Testing gymnasium's Pendulum-v1
+    env = gym.make('racetrack-v0', render_mode='human')
     # print("obs space:", env.observation_space)  # should be a Box with shape (3,)
     # print("act space:", env.action_space)       # should be a Box with high ≈ [2.]
 
