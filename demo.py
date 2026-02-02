@@ -57,11 +57,12 @@ class Actor(nn.Module):
         mu, std = self.forward(state)
         normal = torch.distributions.Normal(mu, std)
         z = normal.rsample()  # Reparameterization trick
-        action = torch.tanh(z) * self.max_action # Scale action to the environment's action range
+        action_tanh = torch.tanh(z) # Tanh squashing
+        action = action_tanh * self.max_action  # Scale action to environment's action range
         
         #! Look for correct log prob calculation 
         log_prob = normal.log_prob(z)
-        log_prob_minus= torch.log(1 - action.pow(2) + 1e-6) # Correction for Tanh squashing
+        log_prob_minus= torch.log(1 - action_tanh.pow(2) + 1e-6) # Correction for Tanh squashing
         log_prob = log_prob - log_prob_minus
         log_prob = log_prob.sum(-1, keepdim=True)
         return action, log_prob # Return sampled action and log probability
@@ -87,8 +88,8 @@ class Critic(nn.Module):
 class SACAgent:
     def __init__(self, state_dim: int, action_dim: int, 
                  buffer_size: int=int(1e6), min_buffer_size: int=1000,
-                 batch_size: int=256, hidden_dim: int=16, max_action: float=1.0,
-                 actor_lr: float=1e-6, critic_lr: float=1e-5,
+                 batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
+                 actor_lr: float=3e-4, critic_lr: float=3e-4,
                  gamma: float=0.99, tau: float=0.005, alpha: float=0.2):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -125,19 +126,17 @@ class SACAgent:
 
     # Select action based on current policy
     def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
-        state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) #? What unsqueeze
-        #? state_x = torch.FloatTensor(state).float().to(self.device) # Convert state to tensor
-        #! state = state.unsqueeze(0)  # Add batch dimension
+        state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) # Convert state to tensor and move to device
+        state_tensor = state_tensor.unsqueeze(0)  # Add batch dimension
         
         if evaluate:
-
             #! This can be optimized further: refactor to avoid code duplication
             mu, _ = self.actor.forward(state_tensor)
             action = torch.tanh(mu) * self.actor.max_action
-            return action.cpu().data.numpy() # Return action for evaluation
         else:
             action, _ = self.actor.sample(state_tensor)
-            return action.cpu().data.numpy()
+
+        return action.squeeze(0).cpu().data.numpy() # Remove batch dimension and convert to numpy array
         
     # Soft update target networks
     def soft_update(self, net: torch.nn.Module, target_net: torch.nn.Module) -> None:
@@ -173,6 +172,7 @@ class SACAgent:
         current_q2 = self.critic2(state, action)
 
         #? Compute Critic losses: Why not target_q.detach()?
+        #*  it is already detached from the gradient graph. Adding .detach() is redundant but safe.
         critic1_loss = nn.MSELoss()(current_q1, target_q)
         critic2_loss = nn.MSELoss()(current_q2, target_q)
 
