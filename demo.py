@@ -349,7 +349,5 @@ if __name__ == "__main__":
             state, _ = env.reset() # Reset environment if done
             print("Environment reset.")
             time.sleep(1)
-        
-
 
     env.close()
