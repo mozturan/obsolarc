@@ -93,7 +93,7 @@ class SACAgent:
                  buffer_size: int=int(1e6), min_buffer_size: int=1000,
                  batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
                  actor_lr: float=3e-4, critic_lr: float=3e-4,
-                 gamma: float=0.99, tau: float=0.005, alpha: float=0.2):
+                 gamma: float=0.99, tau: float=0.005, alpha: float=0.2, auto_entropy: bool=False):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -125,7 +125,23 @@ class SACAgent:
         
         self.gamma = gamma # Discount factor
         self.tau = tau # Soft update factor
-        self.alpha = alpha # Entropy coefficient
+
+        self.auto_entropy = auto_entropy # Automatic entropy tuning
+
+        if self.auto_entropy:
+            # 1. Set Target Entropy: The common heuristic is -dim(A).
+            self.target_entropy = -float(action_dim) # Target entropy
+            # 2. We optimize log_alpha instead of alpha directly.
+            # Why? Because alpha must always be positive. exp(log_alpha) is always positive.
+            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device) # Log alpha parameter
+            # 3. Create an optimizer specifically for alpha
+            self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr) # Alpha optimizer
+
+            self.alpha = self.log_alpha.exp() # Initial alpha value
+            print("Using automatic entropy tuning. Initial alpha:", self.alpha.item())
+        else:
+            self.alpha = torch.tensor(alpha, device=self.device) # Entropy coefficient if not auto tuning
+            print("Using fixed alpha:", self.alpha.item())
 
     # Select action based on current policy
     def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
@@ -210,6 +226,22 @@ class SACAgent:
         actor_loss.backward()
         self.actor_optimizer.step()
 
+        # Update entropy coefficient alpha if using automatic entropy tuning
+        if self.auto_entropy:
+            # Compute alpha loss
+            # lp (log_prob) is negative. If -lp > target_entropy, alpha decreases.
+            # We use .detach() on lp because we are optimizing alpha, not the actor here.
+            alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
+
+            # Optimize alpha
+            self.alpha_optimizer.zero_grad()
+            alpha_loss.backward()
+            self.alpha_optimizer.step()
+
+            # Update alpha value
+            self.alpha = self.log_alpha.exp()
+            print("Updated alpha:", self.alpha.item())
+            
         # Soft update target networks
         self.soft_update(self.critic1, self.critic_target1)
         self.soft_update(self.critic2, self.critic_target2)
@@ -293,7 +325,8 @@ if __name__ == "__main__":
                      actor_lr=0.003,
                      batch_size=64,
                      min_buffer_size=100,
-                     hidden_dim=256) # Initialize SAC agent
+                     hidden_dim=256,
+                     auto_entropy=True) # Initialize SAC agent
 
 
     state, _ = env.reset() # Reset environment
@@ -311,7 +344,7 @@ if __name__ == "__main__":
         state = next_state # Update state
         action = agent.choose_action(state) # Choose next action
         agent.train() # Train the agent
-        print(f"Step {i+1} completed. Reward: {reward}")
+        # print(f"Step {i+1} completed. Reward: {reward}")
         if done:
             state, _ = env.reset() # Reset environment if done
             print("Environment reset.")
