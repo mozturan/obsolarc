@@ -291,8 +291,8 @@ if __name__ == "__main__":
                      max_action=1.0,
                      critic_lr=0.003,
                      actor_lr=0.003,
-                     batch_size=256,
-                     min_buffer_size=300,
+                     batch_size=64,
+                     min_buffer_size=100,
                      hidden_dim=256) # Initialize SAC agent
 
 
@@ -303,9 +303,11 @@ if __name__ == "__main__":
     for i in range(50000): # Run for 5 steps
         next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
         done = terminated or truncated or info.get('on_road_reward', 0)
-        agent.replay_buffer.store_transition(state.reshape(-1), 
-                                             action, float(reward), 
-                                             next_state.reshape(-1), done) # Store transition in replay buffer
+        agent.replay_buffer.store_transition(state, 
+                                             action, 
+                                             float(reward), 
+                                             next_state, 
+                                             done) # Store transition in replay buffer
         state = next_state # Update state
         action = agent.choose_action(state) # Choose next action
         agent.train() # Train the agent
