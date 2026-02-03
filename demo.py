@@ -159,9 +159,11 @@ class SACAgent:
         # Convert to PyTorch tensors
         state = torch.FloatTensor(state).to(self.device)
         action = torch.FloatTensor(action).to(self.device)
-        reward = torch.FloatTensor(reward).view(-1, 1).to(self.device)
+        # reward = torch.FloatTensor(reward).view(-1, 1).to(self.device) ! No need to reshape
+        reward = torch.FloatTensor(reward).to(self.device)
         next_state = torch.FloatTensor(next_state).to(self.device)
-        done = torch.FloatTensor(done).view(-1, 1).to(self.device)
+        # done = torch.FloatTensor(done).view(-1, 1).to(self.device) ! No need to reshape
+        done = torch.FloatTensor(done).to(self.device)
 
         # Update Critic networks
         with torch.no_grad(): # No gradient calculation for target

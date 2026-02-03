@@ -47,10 +47,10 @@ class ReplayBuffer(AbstractReplayBuffer):
     
     # Store a new transition in the buffer
     def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float, state_: np.ndarray, done: bool) -> None:
-        self.state_memory[self.ptr] = state
-        self.action_memory[self.ptr] = action
+        self.state_memory[self.ptr] = state.reshape(-1)
+        self.action_memory[self.ptr] = action.reshape(-1)
         self.reward_memory[self.ptr] = reward
-        self.next_state_memory[self.ptr] = state_
+        self.next_state_memory[self.ptr] = state_.reshape(-1)
         self.done_memory[self.ptr] = done
 
         # Update pointer and size
