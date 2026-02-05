@@ -12,7 +12,7 @@ import torch # PyTorch library
 import torch.nn as nn # Neural network module
 import torch.optim as optim # Optimization algorithms
 import numpy as np # NumPy for numerical operations
-from buffer import ReplayBuffer # Import ReplayBuffer from buffer.py
+from ursula.common.buffers import ReplayBuffer
 
 # Define the Actor network
 class Actor(nn.Module):
@@ -88,7 +88,7 @@ class Critic(nn.Module):
         return q_value
     
 # Soft Actor-Critic (SAC) Agent
-class SACAgent:
+class SAC:
     def __init__(self, state_dim: int, action_dim: int, 
                  buffer_size: int=int(1e6), min_buffer_size: int=1000,
                  batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
@@ -318,7 +318,7 @@ if __name__ == "__main__":
         raise ValueError("env.action_space is not a Box space. Make sure your environment uses continuous actions.")
 
     # agent = SACAgent(state_shape, action_shape, max_action=max_action) # Initialize SAC agent
-    agent = SACAgent(state_shape, 
+    agent = SAC(state_shape, 
                      action_shape, 
                      max_action=1.0,
                      critic_lr=0.003,
