@@ -12,7 +12,7 @@ import torch # PyTorch library
 import torch.nn as nn # Neural network module
 import torch.optim as optim # Optimization algorithms
 import numpy as np # NumPy for numerical operations
-from ursula.common.buffers import ReplayBuffer
+from ursula.buffers import ReplayBuffer
 
 # Define the Actor network
 class Actor(nn.Module):
