@@ -7,6 +7,9 @@ So, to make things easier for myself and to help with my research and develeopme
 This basically a framework i will use for my future researches to make my proccess easy.
 
 Thing to do for now:
+- [ ] Clipping Gradients
+- [ ] Initializing Weights Properly
+- [ ] Monitoring and Visualization
 - [ ] Implement more reinforcement learning algorithms
 - [ ] Implement more networks options including a transformer
 - [ ] Implement preprocessing tools (and Autoencoders)
