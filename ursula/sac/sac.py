@@ -1,118 +1,60 @@
-# A SAC implementation using PyTorch for a simple continuous control task
-
-import time
-import gymnasium as gym # Gymnasium for environments
-from gymnasium.spaces import Box
-import highway_env  # <--- This line is the magic fix!
-import pprint
-import gc
-from click import Tuple
-from sympy import pprint
-import torch # PyTorch library
-import torch.nn as nn # Neural network module
+import torch 
+import torch.nn as nn 
 import torch.optim as optim # Optimization algorithms
-import numpy as np # NumPy for numerical operations
-from ursula.buffers import ReplayBuffer
-
-# Define the Actor network
-class Actor(nn.Module):
-
-    # Initialize the Actor network
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int, max_action: float):
-        super(Actor, self).__init__() #?? Initialize parent class
-        self.fc1 = nn.Linear(state_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.mu_head = nn.Linear(hidden_dim, action_dim)
-        self.log_std_head = nn.Linear(hidden_dim, action_dim)
-        self.max_action = max_action
-
-    # Define the forward pass
-    def forward(self, state: torch.Tensor):
-        # check for NaNs in input state
-        if torch.isnan(state).any():
-            print("NaN detected in input state!")
-            print("Input state:", state)
-
-        # check for infinities in input state
-        if torch.isinf(state).any():
-            print("Infinity detected in input state!")
-            print("Input state:", state)
-
-        x = torch.relu(self.fc1(state))
-        if torch.isnan(x).any():
-            print("NaN detected after fc1!")
-            print("Output after fc1:", x)
+import numpy as np 
+from ursula.buffers import Buffer, ReplayBuffer
+from ursula.networks import Critic, GaussianActor as Actor
+import gc
 
 
-        x = torch.relu(self.fc2(x))
-        if torch.isnan(x).any():
-            print("NaN detected after fc2!")
-            print("Output after fc2:", x)
-
-
-        mu = self.mu_head(x)
-        log_std = self.log_std_head(x)
-        log_std = torch.clamp(log_std, -20, 2)  #! Limit log_std to avoid numerical issues
-        std = torch.exp(log_std)    
-        return mu, std # Return mean and standard deviation of action distribution
-    
-    def sample(self, state: torch.Tensor) : 
-        mu, std = self.forward(state)
-        normal = torch.distributions.Normal(mu, std)
-        z = normal.rsample()  # Reparameterization trick
-        action_tanh = torch.tanh(z) # Tanh squashing
-        action = action_tanh * self.max_action  # Scale action to environment's action range
-        
-        #! Look for correct log prob calculation 
-        log_prob = normal.log_prob(z)
-        log_prob_minus= torch.log(1 - action_tanh.pow(2) + 1e-6) # Correction for Tanh squashing
-        log_prob = log_prob - log_prob_minus
-        log_prob = log_prob.sum(-1, keepdim=True)
-        return action, log_prob # Return sampled action and log probability
-    
-# Define the Critic network
-class Critic(nn.Module):
-
-    # Initialize the Critic network
-    def __init__(self, state_dim: int, action_dim: int, hidden_dim: int):
-        super(Critic, self).__init__() # ?? Initialize parent class
-        self.fc1 = nn.Linear(state_dim + action_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.q_head = nn.Linear(hidden_dim, 1)
-
-    # Define the forward pass
-    def forward(self, state: torch.Tensor, action: torch.Tensor):
-        x = torch.relu(self.fc1(torch.cat([state, action], 1)))
-        x = torch.relu(self.fc2(x))
-        q_value = self.q_head(x)
-        return q_value
-    
-# Soft Actor-Critic (SAC) Agent
 class SAC:
-    def __init__(self, state_dim: int, action_dim: int, 
-                 buffer_size: int=int(1e6), min_buffer_size: int=1000,
-                 batch_size: int=256, hidden_dim: int=256, max_action: float=1.0,
-                 actor_lr: float=3e-4, critic_lr: float=3e-4,
-                 gamma: float=0.99, tau: float=0.005, alpha: float=0.2, auto_entropy: bool=False):
+    def __init__(self, 
+                 state_dim: int, 
+                 action_dim: int, 
+                 buffer_size: int=int(1e6), 
+                 min_buffer_size: int=1000,
+                 batch_size: int=256, 
+                 hidden_sizes: list = [256, 256], 
+                 max_action: float=1.0, 
+                 buffer: Buffer | None = None, 
+                 actor_lr: float=3e-4, 
+                 critic_lr: float=3e-4,
+                 gamma: float=0.99, 
+                 tau: float=0.005, 
+                 alpha: float=0.2, 
+                 auto_entropy: bool=False):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Initialize Replay Buffer
-        self.replay_buffer = ReplayBuffer(max_size=buffer_size, state_dim=state_dim, action_dim=action_dim)
+        if buffer is None:
+            self.replay_buffer = ReplayBuffer(max_size = buffer_size,
+                                              state_dim = state_dim,
+                                              action_dim = action_dim)
+        elif isinstance(buffer, Buffer):
+            self.replay_buffer = buffer
+        else:
+            raise ValueError("Provided buffer class must be a subclass of Buffer. Make sure your custom buffer implements the Buffer interface.")
+        
         self.min_buffer_size = min_buffer_size # Minimum buffer size before training
-        self.batch_size = batch_size # Batch size for training
+        self.batch_size = batch_size
 
         # Initialize Actor and Critic networks
-        self.actor = Actor(state_dim, action_dim, 
-                           hidden_dim, max_action).to(self.device) # Initialize Actor network
-        self.critic1 = Critic(state_dim, action_dim, 
-                             hidden_dim).to(self.device) # Initialize Critic network
-        self.critic2 = Critic(state_dim, action_dim, 
-                             hidden_dim).to(self.device) # Initialize Critic network
-        self.critic_target1 = Critic(state_dim, action_dim, 
-                                    hidden_dim).to(self.device) # Initialize target Critic network
-        self.critic_target2 = Critic(state_dim, action_dim, 
-                                    hidden_dim).to(self.device) # Initialize target Critic network
+        self.actor = Actor(state_dim = state_dim, 
+                           action_dim = action_dim, 
+                           hidden_sizes = hidden_sizes, 
+                           max_action = max_action).to(self.device)
+        self.critic1 = Critic(state_dim = state_dim, 
+                              action_dim = action_dim, 
+                             hidden_sizes = hidden_sizes).to(self.device)
+        self.critic2 = Critic(state_dim = state_dim, 
+                              action_dim = action_dim, 
+                             hidden_sizes = hidden_sizes).to(self.device)
+        self.critic_target1 = Critic(state_dim = state_dim, 
+                                     action_dim = action_dim, 
+                                    hidden_sizes = hidden_sizes).to(self.device)
+        self.critic_target2 = Critic(state_dim = state_dim, 
+                                     action_dim = action_dim, 
+                                    hidden_sizes = hidden_sizes).to(self.device)
         
         # Copy weights from Critic to target Critic networks
         self.critic_target1.load_state_dict(self.critic1.state_dict()) # Copy weights to target
@@ -151,10 +93,11 @@ class SAC:
         
         if evaluate:
             #! This can be optimized further: refactor to avoid code duplication
-            mu, _ = self.actor.forward(state_tensor)
-            action = torch.tanh(mu) * self.actor.max_action
+            _, _, action = self.actor.sample(state_tensor) # Get mean action from the actor
+            # mu, _ = self.actor.forward(state_tensor)
+            # action = torch.tanh(mu) * self.actor.max_action
         else:
-            action, _ = self.actor.sample(state_tensor)
+            action, _, _ = self.actor.sample(state_tensor)
 
         return action.squeeze(0).cpu().data.numpy() # Remove batch dimension and convert to numpy array
         
@@ -166,7 +109,7 @@ class SAC:
     # Update the SAC agent
     def train(self) -> None:
         
-        if self.replay_buffer.size < self.min_buffer_size:
+        if self.replay_buffer.__len__() < self.min_buffer_size:
             return  # Not enough data to train
         
         # Sample a batch of transitions from the replay buffer
@@ -183,7 +126,7 @@ class SAC:
 
         # Update Critic networks
         with torch.no_grad(): # No gradient calculation for target
-            next_action, next_log_prob = self.actor.sample(next_state)
+            next_action, next_log_prob, _ = self.actor.sample(next_state)
             target_q1 = self.critic_target1(next_state, next_action)
             target_q2 = self.critic_target2(next_state, next_action)
             target_q = reward + (1 - done) * self.gamma * (torch.min(target_q1, target_q2) - self.alpha * next_log_prob)
@@ -210,7 +153,7 @@ class SAC:
         # Update Actor network
 
         # Get new actions and log probabilities for the current states 
-        new_action, log_prob = self.actor.sample(state)
+        new_action, log_prob, _ = self.actor.sample(state)
         
         # Q values for the new actions 
         q1_new_action = self.critic1(state, new_action)
@@ -249,105 +192,3 @@ class SAC:
         # Clear memory cache just in case
         gc.collect()
         # torch.cuda.empty_cache() #? Does this work? 
-
-
-#--------- Test the SAC Agent and choose_action using dummy data ---------#
-
-if __name__ == "__main__":
-    # env = gym.make("MountainCarContinuous-v0", render_mode="human", 
-    #                goal_velocity=1.0) # Create environment: Testing gymnasium's Pendulum-v1
-    env = gym.make('racetrack-v0', render_mode='human',
-                   config={
-                            "observation": {
-                                "type": "Kinematics",
-                                "vehicles_count": 1,
-                                "features": ["presence", 
-                                             "x", "y", 
-                                             "vx", "vy", 
-                                             "cos_h", "sin_h",
-                                             "heading", "long_off",
-                                             "lat_off", "ang_off"],                                "grid_size": [[-18, 18], [-18, 18]],
-                                "features_range": {
-                                    "x": [-100, 100],
-                                    "y": [-100, 100],
-                                    "vx": [-20, 20],
-                                    "vy": [-20, 20]
-                                },                            },
-                            "action": {
-                                "type": "ContinuousAction",
-                                "longitudinal": True,
-                                "lateral": True
-                            },
-                            "simulation_frequency": 15,
-                            "policy_frequency": 5,
-                            "duration": 300,
-                            "collision_reward": -1,
-                            "lane_centering_cost": 4,
-                            "action_reward": -0.3,
-                            "controlled_vehicles": 1,
-                            "other_vehicles": 0,
-                            "screen_width": 600,
-                            "screen_height": 600,
-                            "centering_position": [0.5, 0.5],
-                            "scaling": 7,
-                            "show_trajectories": True,
-                            "render_agent": True,
-                            "offscreen_rendering": False
-                        })
-
-    # print(env.unwrapped.config)
-
-    # Get state and action dimensions
-    state_space = env.observation_space.shape # (3,)
-    if isinstance(state_space, tuple):
-        state_shape = int(np.prod(state_space)) 
-
-    else:
-        raise ValueError("env.observation_space.shape is not a tuple. Make sure your environment uses continuous states.")
-
-    action_space = env.action_space.shape # (1,)
-    if isinstance(action_space, tuple):
-        action_shape = int(np.prod(action_space))
-    else:
-        raise ValueError("env.action_space.shape is not a tuple. Make sure your environment uses continuous actions.")
-
-    # Get maximum action value
-    if isinstance(env.action_space, Box):
-        max_action = float(env.action_space.high[0])  # Maximum action value
-    else:
-        raise ValueError("env.action_space is not a Box space. Make sure your environment uses continuous actions.")
-
-    # agent = SACAgent(state_shape, action_shape, max_action=max_action) # Initialize SAC agent
-    agent = SAC(state_shape, 
-                     action_shape, 
-                     max_action=1.0,
-                     critic_lr=0.003,
-                     actor_lr=0.003,
-                     batch_size=64,
-                     min_buffer_size=100,
-                     hidden_dim=256,
-                     auto_entropy=True) # Initialize SAC agent
-
-
-    state, _ = env.reset() # Reset environment
-    action = agent.choose_action(state) # Choose action using the agent
-    print("Chosen action:", action) # Print chosen action
-
-    for i in range(50000): # Run for 5 steps
-        next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
-        done = terminated or truncated or info.get('on_road_reward', 0)
-        agent.replay_buffer.store_transition(state, 
-                                             action, 
-                                             float(reward), 
-                                             next_state, 
-                                             done) # Store transition in replay buffer
-        state = next_state # Update state
-        action = agent.choose_action(state) # Choose next action
-        agent.train() # Train the agent
-        # print(f"Step {i+1} completed. Reward: {reward}")
-        if done:
-            state, _ = env.reset() # Reset environment if done
-            print("Environment reset.")
-            time.sleep(1)
-
-    env.close()
