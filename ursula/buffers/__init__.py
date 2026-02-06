@@ -1,2 +1,2 @@
-from .base import AbstractReplayBuffer
+from .base import Buffer
 from .ReplayBuffer import ReplayBuffer

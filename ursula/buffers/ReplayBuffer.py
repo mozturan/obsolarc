@@ -2,14 +2,18 @@ from typing import Tuple
 import numpy as np
 import random as rndm
 from abc import ABC, abstractmethod
-from .base import AbstractReplayBuffer # Import the base from the same folder
+from .base import Buffer # Import the base from the same folder
 
-class ReplayBuffer(AbstractReplayBuffer):
+class ReplayBuffer(Buffer):
     """
     A simple replay buffer for storing and sampling transitions
 
     """
-    def __init__(self, max_size: int, state_dim: int, action_dim: int):
+    def __init__(self, 
+                 max_size: int, 
+                 state_dim: int, 
+                 action_dim: int):
+        
         self.max_size = max_size
         self.ptr = 0
         self.size = 0
@@ -22,7 +26,13 @@ class ReplayBuffer(AbstractReplayBuffer):
         self.done_memory = np.zeros((self.max_size, 1), dtype=bool)
     
     # Store a new transition in the buffer
-    def store_transition(self, state: np.ndarray, action: np.ndarray, reward: float, state_: np.ndarray, done: bool) -> None:
+    def store_transition(self, 
+                         state: np.ndarray, 
+                         action: np.ndarray, 
+                         reward: float, 
+                         state_: np.ndarray, 
+                         done: bool) -> None:
+        
         self.state_memory[self.ptr] = state.reshape(-1)
         self.action_memory[self.ptr] = action.reshape(-1)
         self.reward_memory[self.ptr] = reward
@@ -33,7 +43,10 @@ class ReplayBuffer(AbstractReplayBuffer):
         self.ptr = (self.ptr + 1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-    def sample_buffer(self, batch_size: int, priority_scale: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    def sample_buffer(self, 
+                      batch_size: int, 
+                      priority_scale: float = 1.0) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        
         max_mem = self.size
         batch_indices = rndm.sample(range(max_mem), batch_size)
         # batch_indices = np.random.choice(max_mem, batch_size, replace=False)
