@@ -18,7 +18,8 @@ if __name__ == "__main__":
                                              "vx", "vy", 
                                              "cos_h", "sin_h",
                                              "heading", "long_off",
-                                             "lat_off", "ang_off"],                                "grid_size": [[-18, 18], [-18, 18]],
+                                             "lat_off", "ang_off"],
+                                             "grid_size": [[-18, 18], [-18, 18]],
                                 "features_range": {
                                     "x": [-100, 100],
                                     "y": [-100, 100],
@@ -82,7 +83,6 @@ if __name__ == "__main__":
 
     state, _ = env.reset() # Reset environment
     action = agent.choose_action(state) # Choose action using the agent
-    print("Chosen action:", action) # Print chosen action
 
     for i in range(50000): # Run for 5 steps
         next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment

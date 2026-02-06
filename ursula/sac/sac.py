@@ -183,7 +183,6 @@ class SAC:
 
             # Update alpha value
             self.alpha = self.log_alpha.exp()
-            print("Updated alpha:", self.alpha.item())
             
         # Soft update target networks
         self.soft_update(self.critic1, self.critic_target1)
