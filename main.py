@@ -77,9 +77,8 @@ if __name__ == "__main__":
                      actor_lr=0.003,
                      batch_size=64,
                      min_buffer_size=100,
-                     hidden_dim=256,
+                     hidden_sizes=[256, 256],
                      auto_entropy=True) # Initialize SAC agent
-
 
     state, _ = env.reset() # Reset environment
     action = agent.choose_action(state) # Choose action using the agent
@@ -96,10 +95,8 @@ if __name__ == "__main__":
         state = next_state # Update state
         action = agent.choose_action(state) # Choose next action
         agent.train() # Train the agent
-        # print(f"Step {i+1} completed. Reward: {reward}")
+        print(f"Step {i+1}")
         if done:
             state, _ = env.reset() # Reset environment if done
-            print("Environment reset.")
-            time.sleep(1)
 
     env.close()
