@@ -6,11 +6,14 @@ class GaussianActor(BasePolicy):
     def __init__(self, 
                  state_dim: int, 
                  action_dim: int, 
-                 hidden_sizes: list = [256, 256], 
-                 max_action: float = 1.0,
-                 log_std_min: float =-20, 
-                 log_std_max: float = 2):
-        super(GaussianActor, self).__init__()
+                 hidden_sizes: list, 
+                 max_action: float,
+                 log_std_min: float = -20.0, 
+                 log_std_max: float = 2.0):
+        super().__init__(state_dim, 
+                        action_dim, 
+                        hidden_sizes, 
+                        max_action)
 
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max

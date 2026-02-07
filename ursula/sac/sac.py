@@ -1,13 +1,21 @@
+from typing import Optional, Type, Union
 import torch 
 import torch.nn as nn 
 import torch.optim as optim # Optimization algorithms
 import numpy as np 
 from ursula.buffers import Buffer, ReplayBuffer
+from ursula.networks import ACTOR_REGISTRY, CRITIC_REGISTRY
 from ursula.networks import Critic, GaussianActor as Actor
-import gc
-
+from ursula.networks import BasePolicy, BaseValueFunction
 
 class SAC:
+    actor: Actor
+    critic1: BaseValueFunction
+    critic2: BaseValueFunction
+    critic_target1: BaseValueFunction
+    critic_target2: BaseValueFunction
+    replay_buffer: Buffer
+    
     def __init__(self, 
                  state_dim: int, 
                  action_dim: int, 
@@ -15,8 +23,10 @@ class SAC:
                  min_buffer_size: int=1000,
                  batch_size: int=256, 
                  hidden_sizes: list = [256, 256], 
-                 max_action: float=1.0, 
-                 buffer: Buffer | None = None, 
+                 max_action: float=1.0,
+                 actor: str | type[Actor] = Actor, 
+                 critic: str | type[BaseValueFunction] = Critic, 
+                 buffer: type[Buffer] = ReplayBuffer, 
                  actor_lr: float=3e-4, 
                  critic_lr: float=3e-4,
                  gamma: float=0.99, 
@@ -25,37 +35,61 @@ class SAC:
                  auto_entropy: bool=False):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-        if buffer is None:
-            self.replay_buffer = ReplayBuffer(max_size = buffer_size,
-                                              state_dim = state_dim,
-                                              action_dim = action_dim)
-        elif isinstance(buffer, Buffer):
-            self.replay_buffer = buffer
+
+        # Initialize replay buffer
+        if issubclass(buffer, Buffer):
+            self.replay_buffer = buffer(max_size = buffer_size,
+                                        state_dim = state_dim,
+                                        action_dim = action_dim)
         else:
             raise ValueError("Provided buffer class must be a subclass of Buffer. Make sure your custom buffer implements the Buffer interface.")
         
         self.min_buffer_size = min_buffer_size # Minimum buffer size before training
         self.batch_size = batch_size
-
-        # Initialize Actor and Critic networks
-        self.actor = Actor(state_dim = state_dim, 
-                           action_dim = action_dim, 
-                           hidden_sizes = hidden_sizes, 
-                           max_action = max_action).to(self.device)
-        self.critic1 = Critic(state_dim = state_dim, 
-                              action_dim = action_dim, 
-                             hidden_sizes = hidden_sizes).to(self.device)
-        self.critic2 = Critic(state_dim = state_dim, 
-                              action_dim = action_dim, 
-                             hidden_sizes = hidden_sizes).to(self.device)
-        self.critic_target1 = Critic(state_dim = state_dim, 
-                                     action_dim = action_dim, 
-                                    hidden_sizes = hidden_sizes).to(self.device)
-        self.critic_target2 = Critic(state_dim = state_dim, 
-                                     action_dim = action_dim, 
-                                    hidden_sizes = hidden_sizes).to(self.device)
         
+        # Actor Init
+        if isinstance(actor, str):
+            if actor not in ACTOR_REGISTRY:
+                raise KeyError(f"Actor '{actor}' not found in registry. Available: {list(ACTOR_REGISTRY.keys())}")
+            actor_class = ACTOR_REGISTRY[actor]
+        elif isinstance(actor, type):
+            # check if it's the right subclass for extra safety
+            if not issubclass(actor, torch.nn.Module):
+                raise TypeError(f"Custom actor {actor} must be a subclass of torch.nn.Module")
+            actor_class = actor
+        else:
+            raise TypeError(f"Actor must be a string or a class type, received {type(actor)}")
+        
+        self.actor = actor_class(state_dim = state_dim, 
+                                 action_dim = action_dim, 
+                                 hidden_sizes = hidden_sizes, 
+                                 max_action = max_action, 
+                                 log_std_min = -20, 
+                                 log_std_max = 2).to(self.device)
+        
+        # Critic Init
+        if isinstance(critic, str):
+            if critic not in CRITIC_REGISTRY:
+                raise KeyError(f"Critic '{critic}' not found in registry. Available: {list(CRITIC_REGISTRY.keys())}")
+            critic_class = CRITIC_REGISTRY[critic]
+        elif isinstance(critic, type):
+            critic_class = critic
+        else:
+            raise TypeError(f"Critic must be a string or a class type, received {type(critic)}")
+
+        self.critic1 = critic_class(state_dim = state_dim, 
+                                        action_dim = action_dim, 
+                                        hidden_sizes = hidden_sizes).to(self.device)
+        self.critic2 = critic_class(state_dim = state_dim, 
+                                        action_dim = action_dim, 
+                                        hidden_sizes = hidden_sizes).to(self.device)
+        self.critic_target1 = critic_class(state_dim = state_dim, 
+                                              action_dim = action_dim, 
+                                              hidden_sizes = hidden_sizes).to(self.device)
+        self.critic_target2 = critic_class(state_dim = state_dim, 
+                                              action_dim = action_dim, 
+                                              hidden_sizes = hidden_sizes).to(self.device)
+
         # Copy weights from Critic to target Critic networks
         self.critic_target1.load_state_dict(self.critic1.state_dict()) # Copy weights to target
         self.critic_target2.load_state_dict(self.critic2.state_dict()) # Copy weights to target
@@ -64,7 +98,8 @@ class SAC:
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr) # Actor optimizer
         self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr) # Critic optimizer
         self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr) # Critic optimizer
-        
+        self.mse_loss = nn.MSELoss()
+
         self.gamma = gamma # Discount factor
         self.tau = tau # Soft update factor
 
@@ -92,17 +127,17 @@ class SAC:
         state_tensor = state_tensor.unsqueeze(0)  # Add batch dimension
         
         if evaluate:
-            #! This can be optimized further: refactor to avoid code duplication
-            _, _, action = self.actor.sample(state_tensor) # Get mean action from the actor
-            # mu, _ = self.actor.forward(state_tensor)
-            # action = torch.tanh(mu) * self.actor.max_action
+            # Use deterministic mean action for evaluation
+            sampled_action, _, mean_action = self.actor.sample(state_tensor)
+            action = mean_action
         else:
+            # Use stochastic sampled action for exploration
             action, _, _ = self.actor.sample(state_tensor)
 
-        return action.squeeze(0).cpu().data.numpy() # Remove batch dimension and convert to numpy array
+        return action.squeeze(0).cpu().detach().numpy() # Remove batch dimension and convert to numpy array
         
     # Soft update target networks
-    def soft_update(self, net: torch.nn.Module, target_net: torch.nn.Module) -> None:
+    def _soft_update(self, net: torch.nn.Module, target_net: torch.nn.Module) -> None:
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
@@ -137,8 +172,8 @@ class SAC:
 
         #? Compute Critic losses: Why not target_q.detach()?
         #*  it is already detached from the gradient graph. Adding .detach() is redundant but safe.
-        critic1_loss = nn.MSELoss()(current_q1, target_q)
-        critic2_loss = nn.MSELoss()(current_q2, target_q)
+        critic1_loss = self.mse_loss(current_q1, target_q)
+        critic2_loss = self.mse_loss(current_q2, target_q)
 
         # Optimize the Critic1 network
         self.critic1_optimizer.zero_grad()
@@ -185,9 +220,9 @@ class SAC:
             self.alpha = self.log_alpha.exp()
             
         # Soft update target networks
-        self.soft_update(self.critic1, self.critic_target1)
-        self.soft_update(self.critic2, self.critic_target2)
+        self._soft_update(self.critic1, self.critic_target1)
+        self._soft_update(self.critic2, self.critic_target2)
     
         # Clear memory cache just in case
-        gc.collect()
-        # torch.cuda.empty_cache() #? Does this work? 
+        # gc.collect()
+        # torch.cuda.empty_cache()

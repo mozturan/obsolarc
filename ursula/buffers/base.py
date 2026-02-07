@@ -7,6 +7,14 @@ class Buffer(ABC):
     """
     Abstract class for replay buffer
     """
+
+    def __init__(self, 
+                 max_size: int, 
+                 state_dim: int, 
+                 action_dim: int):
+        pass
+
+
     @abstractmethod
     def store_transition(self, 
                          state: np.ndarray, 

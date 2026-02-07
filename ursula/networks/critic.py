@@ -1,15 +1,17 @@
 import torch
 import torch.nn as nn
-from .base import BasePolicy
+from .base import BaseValueFunction
 
-class Critic(BasePolicy):
+class Critic(BaseValueFunction):
 
     def __init__(self, 
                  state_dim: int, 
                  action_dim: int, 
                  hidden_sizes: list = [256, 256]):
         
-        super(Critic, self).__init__()
+        super().__init__(state_dim, 
+                         action_dim, 
+                         hidden_sizes)
 
         # Build the network architecture
         layers = []
