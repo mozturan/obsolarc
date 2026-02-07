@@ -1,7 +1,5 @@
-import time
 import gymnasium as gym # Gymnasium for environments
 from gymnasium.spaces import Box
-import highway_env  # <--- This line is the magic fix!
 import numpy as np
 from ursula.sac import SAC
 
