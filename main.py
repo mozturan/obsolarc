@@ -2,12 +2,12 @@ import gymnasium as gym # Gymnasium for environments
 from gymnasium.spaces import Box
 import numpy as np
 from ursula.sac import SAC
+import highway_env
+from wrapper import SACHighwayWrapper
 
 if __name__ == "__main__":
-    # env = gym.make("MountainCarContinuous-v0", render_mode="human", 
-    #                goal_velocity=1.0) # Create environment: Testing gymnasium's Pendulum-v1
-    env = gym.make('racetrack-v0', render_mode='human',
-                   config={
+
+    config={
                             "observation": {
                                 "type": "Kinematics",
                                 "vehicles_count": 1,
@@ -44,7 +44,10 @@ if __name__ == "__main__":
                             "show_trajectories": True,
                             "render_agent": True,
                             "offscreen_rendering": False
-                        })
+                        }
+
+    env = gym.make('racetrack-v0', render_mode='human', config=config)
+    env = SACHighwayWrapper(env)
 
     # print(env.unwrapped.config)
 
@@ -81,6 +84,9 @@ if __name__ == "__main__":
 
     state, _ = env.reset() # Reset environment
     action = agent.choose_action(state) # Choose action using the agent
+
+    print(state)
+    print(state.shape)
 
     for i in range(50000): # Run for 5 steps
         next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
