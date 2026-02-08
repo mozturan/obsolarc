@@ -95,6 +95,7 @@ class SAC:
         self.critic_target2.load_state_dict(self.critic2.state_dict()) # Copy weights to target
 
         # Initialize optimizers
+        #? Should i use separate optimizers for each critic? I think yes but not sure.
         self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr) # Actor optimizer
         self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr) # Critic optimizer
         self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr) # Critic optimizer
@@ -105,6 +106,7 @@ class SAC:
 
         self.auto_entropy = auto_entropy # Automatic entropy tuning
 
+        #! i might make a function for this later.
         if self.auto_entropy:
             # 1. Set Target Entropy: The common heuristic is -dim(A).
             self.target_entropy = -float(action_dim) # Target entropy
@@ -119,7 +121,7 @@ class SAC:
         else:
             self.alpha = torch.tensor(alpha, device=self.device) # Entropy coefficient if not auto tuning
             print("Using fixed alpha:", self.alpha.item())
-
+        
     # Select action based on current policy
     def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
         state = np.array(state).reshape(-1)  # Ensure state is a 1D array
