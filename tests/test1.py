@@ -1,4 +1,10 @@
-hidden= [1,2,5]
+import numpy as np
 
-for i in hidden:
-    print(i)
+x = np.zeros((1,11))
+
+print(x.shape)
+t= np.array([1])
+x = np.concatenate((x, [t]), axis=0)
+
+print(x.shape)
+print(x)
