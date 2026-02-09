@@ -49,21 +49,6 @@ if __name__ == "__main__":
     env = gym.make('racetrack-v0', render_mode='human', config=config)
     env = SACHighwayWrapper(env)
 
-    # print(env.unwrapped.config)
-
-    # Get state and action dimensions
-    # state_space = env.observation_space.shape # (3,)
-    # if isinstance(state_space, tuple):
-    #     state_shape = int(np.prod(state_space)) 
-
-    # else:
-    #     raise ValueError("env.observation_space.shape is not a tuple. Make sure your environment uses continuous states.")
-
-    # action_space = env.action_space.shape # (1,)
-    # if isinstance(action_space, tuple):
-    #     action_shape = int(np.prod(action_space))
-    # else:
-    #     raise ValueError("env.action_space.shape is not a tuple. Make sure your environment uses continuous actions.")
 
     # Get maximum action value
     if isinstance(env.action_space, Box):

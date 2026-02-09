@@ -3,13 +3,22 @@ import torch.nn as nn
 from abc import ABC, abstractmethod
 
 class BaseNetwork(nn.Module, ABC):
+
+    """
+    It handles boilerplate like weight initialization, saving/loading, and device management.
+    """
     def __init__(self):
         super(BaseNetwork, self).__init__()
 
 class BasePolicy(BaseNetwork):
+
+    """
+    Defines the API for .predict() and .forward().
+    """
+
     def __init__(self,                  
-                 state_dim: int, 
-                 action_dim: int, 
+                 observation_space, 
+                 action_space, 
                  hidden_sizes: list, 
                  max_action: float):
         super().__init__()
@@ -27,8 +36,14 @@ class BasePolicy(BaseNetwork):
         pass
 
 class BaseValueFunction(BaseNetwork):
-    def __init__(self, state_dim: int, 
-                 action_dim: int, 
+
+    """
+        Defines the API for .forward().
+    """
+    
+    def __init__(self, 
+                 observation_space, 
+                 action_space, 
                  hidden_sizes: list[int]):
         super().__init__()
 

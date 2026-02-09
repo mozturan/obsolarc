@@ -4,14 +4,14 @@ from .base import BasePolicy
 
 class GaussianActor(BasePolicy):
     def __init__(self, 
-                 state_dim: int, 
-                 action_dim: int, 
+                 observation_space, 
+                 action_space, 
                  hidden_sizes: list, 
                  max_action: float,
                  log_std_min: float = -20.0, 
                  log_std_max: float = 2.0):
-        super().__init__(state_dim, 
-                        action_dim, 
+        super().__init__(observation_space, 
+                        action_space,
                         hidden_sizes, 
                         max_action)
 
@@ -21,6 +21,8 @@ class GaussianActor(BasePolicy):
 
         # Build the network architecture
         layers = []
+        state_dim = observation_space.shape[0]
+        action_dim = action_space.shape[0]
         input_dim = state_dim
         for hidden_size in hidden_sizes:
             layers.append(nn.Linear(input_dim, hidden_size))

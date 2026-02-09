@@ -5,17 +5,20 @@ from .base import BaseValueFunction
 class Critic(BaseValueFunction):
 
     def __init__(self, 
-                 state_dim: int, 
-                 action_dim: int, 
+                 observation_space, 
+                 action_space, 
                  hidden_sizes: list = [256, 256]):
         
-        super().__init__(state_dim, 
-                         action_dim, 
+        super().__init__(observation_space, 
+                         action_space, 
                          hidden_sizes)
+
+        self.state_dim = observation_space.shape[0] #if hasattr(observation_space, 'shape') else observation_space.n
+        self.action_dim = action_space.shape[0] #if hasattr(action_space, 'shape') else action_space.n
 
         # Build the network architecture
         layers = []
-        input_dim = state_dim + action_dim  # Concatenate state and action
+        input_dim = self.state_dim + self.action_dim  # Concatenate state and action
         for hidden_size in hidden_sizes:
             layers.append(nn.Linear(input_dim, hidden_size))
             layers.append(nn.ReLU())

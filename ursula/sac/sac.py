@@ -1,4 +1,5 @@
 from typing import Optional, Type, Union
+from gymnasium import Env
 import torch 
 import torch.nn as nn 
 import torch.optim as optim # Optimization algorithms
@@ -6,7 +7,9 @@ import numpy as np
 from ursula.buffers import Buffer, ReplayBuffer
 from ursula.networks import ACTOR_REGISTRY, CRITIC_REGISTRY
 from ursula.networks import Critic, GaussianActor as Actor
-from ursula.networks import BasePolicy, BaseValueFunction
+from ursula.networks import BaseValueFunction, BasePolicy
+
+#TODO: actor is Actor or BasePolicy? Define the difference between this classes.
 
 class SAC:
     actor: Actor
@@ -17,8 +20,7 @@ class SAC:
     replay_buffer: Buffer
     
     def __init__(self, 
-                 state_dim: int, 
-                 action_dim: int, 
+                 env: Env,
                  buffer_size: int=int(1e6), 
                  min_buffer_size: int=1000,
                  batch_size: int=256, 
@@ -36,17 +38,43 @@ class SAC:
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+        self.env = env
+        observation_space = self.env.observation_space
+        action_space = self.env.action_space
+        state_dim = int(np.prod(observation_space.shape)) if observation_space.shape is not None else 1 # Flatten state dimension if it's multi-dimensional
+        action_dim = int(np.prod(action_space.shape)) if action_space.shape is not None else 1 # Flatten action dimension if it's multi-dimensional
+        
         # Initialize replay buffer
         if issubclass(buffer, Buffer):
-            self.replay_buffer = buffer(max_size = buffer_size,
-                                        state_dim = state_dim,
-                                        action_dim = action_dim)
+            self.replay_buffer = buffer(max_size=buffer_size, 
+                                        state_dim=state_dim, 
+                                        action_dim=action_dim)
         else:
             raise ValueError("Provided buffer class must be a subclass of Buffer. Make sure your custom buffer implements the Buffer interface.")
         
         self.min_buffer_size = min_buffer_size # Minimum buffer size before training
         self.batch_size = batch_size
         
+        self._create_actor(actor,observation_space, action_space, max_action, hidden_sizes)
+        self._create_critics(critic, observation_space, action_space, hidden_sizes)
+        self._init_optimizers(actor_lr,critic_lr)
+
+        self.gamma = gamma # Discount factor
+        self.tau = tau # Soft update factor
+
+        self.auto_entropy = auto_entropy # Automatic entropy tuning
+        self._setup_entropy(alpha=alpha, action_dim=action_dim, learning_rate=actor_lr)
+
+    # a function to refactor network init    
+    def _create_actor(self, 
+                      actor: str | type[Actor],
+                      observation_space, 
+                      action_space, 
+                      max_action, 
+                      hidden_sizes,
+                      log_std_min = -20,
+                      log_std_max = 2):
+                
         # Actor Init
         if isinstance(actor, str):
             if actor not in ACTOR_REGISTRY:
@@ -60,14 +88,19 @@ class SAC:
         else:
             raise TypeError(f"Actor must be a string or a class type, received {type(actor)}")
         
-        self.actor = actor_class(state_dim = state_dim, 
-                                 action_dim = action_dim, 
+        self.actor = actor_class(observation_space = observation_space, 
+                                 action_space = action_space, 
                                  hidden_sizes = hidden_sizes, 
                                  max_action = max_action, 
                                  log_std_min = -20, 
                                  log_std_max = 2).to(self.device)
-        
-        # Critic Init
+    
+    def _create_critics(self,
+                        critic,
+                        observation_space,
+                        action_space,
+                        hidden_sizes):
+    
         if isinstance(critic, str):
             if critic not in CRITIC_REGISTRY:
                 raise KeyError(f"Critic '{critic}' not found in registry. Available: {list(CRITIC_REGISTRY.keys())}")
@@ -77,36 +110,24 @@ class SAC:
         else:
             raise TypeError(f"Critic must be a string or a class type, received {type(critic)}")
 
-        self.critic1 = critic_class(state_dim = state_dim, 
-                                        action_dim = action_dim, 
+        self.critic1 = critic_class(observation_space = observation_space, 
+                                        action_space = action_space, 
                                         hidden_sizes = hidden_sizes).to(self.device)
-        self.critic2 = critic_class(state_dim = state_dim, 
-                                        action_dim = action_dim, 
+        self.critic2 = critic_class(observation_space = observation_space, 
+                                        action_space = action_space, 
                                         hidden_sizes = hidden_sizes).to(self.device)
-        self.critic_target1 = critic_class(state_dim = state_dim, 
-                                              action_dim = action_dim, 
+        self.critic_target1 = critic_class(observation_space = observation_space, 
+                                              action_space = action_space, 
                                               hidden_sizes = hidden_sizes).to(self.device)
-        self.critic_target2 = critic_class(state_dim = state_dim, 
-                                              action_dim = action_dim, 
+        self.critic_target2 = critic_class(observation_space = observation_space, 
+                                              action_space = action_space, 
                                               hidden_sizes = hidden_sizes).to(self.device)
 
         # Copy weights from Critic to target Critic networks
         self.critic_target1.load_state_dict(self.critic1.state_dict()) # Copy weights to target
         self.critic_target2.load_state_dict(self.critic2.state_dict()) # Copy weights to target
 
-        # Initialize optimizers
-        #? Should i use separate optimizers for each critic? I think yes but not sure.
-        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr) # Actor optimizer
-        self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr) # Critic optimizer
-        self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr) # Critic optimizer
-        self.mse_loss = nn.MSELoss()
-
-        self.gamma = gamma # Discount factor
-        self.tau = tau # Soft update factor
-
-        self.auto_entropy = auto_entropy # Automatic entropy tuning
-
-        #! i might make a function for this later.
+    def _setup_entropy(self, alpha:float, action_dim, learning_rate: float):
         if self.auto_entropy:
             # 1. Set Target Entropy: The common heuristic is -dim(A).
             self.target_entropy = -float(action_dim) # Target entropy
@@ -114,15 +135,21 @@ class SAC:
             # Why? Because alpha must always be positive. exp(log_alpha) is always positive.
             self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device) # Log alpha parameter
             # 3. Create an optimizer specifically for alpha
-            self.alpha_optimizer = optim.Adam([self.log_alpha], lr=actor_lr) # Alpha optimizer
+            self.alpha_optimizer = optim.Adam([self.log_alpha], lr=learning_rate) # Alpha optimizer
 
             self.alpha = self.log_alpha.exp() # Initial alpha value
-            print("Using automatic entropy tuning. Initial alpha:", self.alpha.item())
         else:
             self.alpha = torch.tensor(alpha, device=self.device) # Entropy coefficient if not auto tuning
-            print("Using fixed alpha:", self.alpha.item())
-        
+
+    def _init_optimizers(self, actor_lr: float, critic_lr: float):
+        #? Should i use separate optimizers for each critic? I think yes but not sure.
+        self.actor_optimizer = optim.Adam(self.actor.parameters(), lr=actor_lr) # Actor optimizer
+        self.critic1_optimizer = optim.Adam(self.critic1.parameters(), lr=critic_lr) # Critic optimizer
+        self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr) # Critic optimizer
+        self.mse_loss = nn.MSELoss()
+
     # Select action based on current policy
+    @torch.no_grad
     def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
         state = np.array(state).reshape(-1)  # Ensure state is a 1D array
         state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) # Convert state to tensor and move to device
