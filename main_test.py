@@ -4,7 +4,7 @@ from gymnasium.spaces import Box
 import numpy as np
 from ursula.sac import SAC
 import highway_env
-from wrapper import SACHighwayWrapper
+from ursula.wrappers.wrappers import SACHighwayWrapper
 
 config={
                             "observation": {
