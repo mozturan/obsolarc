@@ -47,7 +47,6 @@ class SAC:
         #! AMP methods are deprecated i guess. I will figure out later.
         #? self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
 
-        print(torch.__version__)
         self.env = env
         observation_space = self.env.observation_space
         action_space = self.env.action_space
