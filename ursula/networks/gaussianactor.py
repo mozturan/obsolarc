@@ -9,11 +9,13 @@ class GaussianActor(BasePolicy):
                  hidden_sizes: list, 
                  max_action: float,
                  log_std_min: float = -20.0, 
-                 log_std_max: float = 2.0):
+                 log_std_max: float = 2.0,
+                 **kwargs):
         super().__init__(observation_space, 
                         action_space,
                         hidden_sizes, 
-                        max_action)
+                        max_action,
+                        **kwargs)
 
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max

@@ -7,11 +7,13 @@ class Critic(BaseValueFunction):
     def __init__(self, 
                  observation_space, 
                  action_space, 
-                 hidden_sizes: list = [256, 256]):
+                 hidden_sizes: list = [256, 256],
+                 **kwargs):
         
         super().__init__(observation_space, 
                          action_space, 
-                         hidden_sizes)
+                         hidden_sizes,
+                         **kwargs)
 
         self.state_dim = observation_space.shape[0] #if hasattr(observation_space, 'shape') else observation_space.n
         self.action_dim = action_space.shape[0] #if hasattr(action_space, 'shape') else action_space.n

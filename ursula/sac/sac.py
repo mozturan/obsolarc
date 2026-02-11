@@ -12,7 +12,7 @@ from ursula.networks import BaseValueFunction, BasePolicy
 #TODO: actor is Actor or BasePolicy? Define the difference between this classes.
 
 class SAC:
-    actor: Actor
+    actor: BasePolicy
     critic1: BaseValueFunction
     critic2: BaseValueFunction
     critic_target1: BaseValueFunction
@@ -26,7 +26,7 @@ class SAC:
                  batch_size: int=256, 
                  hidden_sizes: list = [256, 256], 
                  max_action: float=1.0,
-                 actor: str | type[Actor] = Actor, 
+                 actor: str | type[BasePolicy] = Actor, 
                  critic: str | type[BaseValueFunction] = Critic, 
                  buffer: type[Buffer] = ReplayBuffer, 
                  actor_lr: float=3e-4, 
@@ -82,7 +82,7 @@ class SAC:
 
     # a function to refactor network init    
     def _create_actor(self, 
-                      actor: str | type[Actor],
+                      actor: str | type[BasePolicy],
                       observation_space, 
                       action_space, 
                       max_action, 

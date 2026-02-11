@@ -20,7 +20,8 @@ class BasePolicy(BaseNetwork):
                  observation_space, 
                  action_space, 
                  hidden_sizes: list, 
-                 max_action: float):
+                 max_action: float,
+                 **kwargs):
         super().__init__()
 
     @staticmethod
@@ -44,7 +45,8 @@ class BaseValueFunction(BaseNetwork):
     def __init__(self, 
                  observation_space, 
                  action_space, 
-                 hidden_sizes: list[int]):
+                 hidden_sizes: list[int],
+                 **kwargs):
         super().__init__()
 
     @staticmethod
