@@ -31,13 +31,23 @@ class SAC:
                  buffer: type[Buffer] = ReplayBuffer, 
                  actor_lr: float=3e-4, 
                  critic_lr: float=3e-4,
+                 max_grad_norm_actor: float | None = 1.0,
+                 max_grad_norm_critic: float | None = 1.0,
+                 max_grad_norm_alpha: float | None  = None,
+                 log_grad_norm: bool = False,
                  gamma: float=0.99, 
                  tau: float=0.005, 
                  alpha: float=0.2, 
-                 auto_entropy: bool=False):
+                 auto_entropy: bool=False,
+                 use_amp: bool=False):
 
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.use_amp = use_amp and self.device.type == "cuda"
 
+        #! AMP methods are deprecated i guess. I will figure out later.
+        #? self.scaler = torch.cuda.amp.GradScaler() if self.use_amp else None
+
+        print(torch.__version__)
         self.env = env
         observation_space = self.env.observation_space
         action_space = self.env.action_space
@@ -58,6 +68,11 @@ class SAC:
         self._create_actor(actor,observation_space, action_space, max_action, hidden_sizes)
         self._create_critics(critic, observation_space, action_space, hidden_sizes)
         self._init_optimizers(actor_lr,critic_lr)
+
+        self.max_grad_norm_actor = max_grad_norm_actor
+        self.max_grad_norm_critic = max_grad_norm_critic
+        self.max_grad_norm_alpha = max_grad_norm_alpha
+        self.log_grad_norm = log_grad_norm
 
         self.gamma = gamma # Discount factor
         self.tau = tau # Soft update factor
@@ -148,28 +163,103 @@ class SAC:
         self.critic2_optimizer = optim.Adam(self.critic2.parameters(), lr=critic_lr) # Critic optimizer
         self.mse_loss = nn.MSELoss()
 
-    # Select action based on current policy
-    @torch.no_grad
-    def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
-        state = np.array(state).reshape(-1)  # Ensure state is a 1D array
-        state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) # Convert state to tensor and move to device
-        state_tensor = state_tensor.unsqueeze(0)  # Add batch dimension
+    # Gradien Clipping
+    def _optimize(self,
+                  loss: torch.Tensor,
+                  optimizer: optim.Optimizer,
+                  parameters,
+                  max_grad_norm: Optional[float] = None,
+                  log_grad_norm: bool = True) -> None:
         
-        if evaluate:
-            # Use deterministic mean action for evaluation
-            sampled_action, _, mean_action = self.actor.sample(state_tensor)
-            action = mean_action
-        else:
-            # Use stochastic sampled action for exploration
-            action, _, _ = self.actor.sample(state_tensor)
+        params = list(parameters)
 
-        return action.squeeze(0).cpu().detach().numpy() # Remove batch dimension and convert to numpy array
-        
+        optimizer.zero_grad()
+
+        #! AMP methods are deprecated i guess. I will figure out later.
+        # if self.scaler is not None:
+        #     self.scaler.scale(loss).backward()
+        #     self.scaler.unscale_(optimizer)
+        # else:
+        #     loss.backward()
+
+        loss.backward()
+
+        #TODO: Log properly
+        # Log grad norms before clipping
+        pre_clip_grad_norm = None
+        if log_grad_norm:
+            pre_clip_grad_norm = self._grad_norm(params)
+
+        # if len(params) == 0:
+        #     raise RuntimeError("No parameters passed to optimizer.")
+
+        # Clip grad norms
+        if max_grad_norm is not None:
+            nn.utils.clip_grad_norm_(params, max_grad_norm)
+
+        # Log grad norms after clipping
+        post_clip_grad_norm = None
+        if log_grad_norm:
+            post_clip_grad_norm = self._grad_norm(params)
+
+        #! AMP methods are deprecated i guess. I will figure out later.
+        # if self.scaler is not None:
+        #     self.scaler.step(optimizer)
+        #     self.scaler.update()
+        # else:
+        #     optimizer.step()
+
+        optimizer.step()
+
+        """
+        For combinad parameters (Multihead or Shared Networks)
+        this method can be called like that:
+
+        self._optimize(self,
+                        loss=joint_loss,
+                        optimizer=self.shared_optimizer,
+                        parameters=itertools.chain(
+                            self.actor.parameters(),
+                            self.critic1.parameters(),
+                        ),
+                        max_grad_norm=1.0,
+                    )
+        """
+    
+    def _grad_norm(self, parameters) -> float:
+        """
+        Compute L2 norm of gradients for a set of parameters.
+        """
+        total_norm = 0.0
+        for p in parameters:
+            if p.grad is not None:
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+        return total_norm ** 0.5
+    
     # Soft update target networks
     def _soft_update(self, net: torch.nn.Module, target_net: torch.nn.Module) -> None:
         for param, target_param in zip(net.parameters(), target_net.parameters()):
             target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
 
+    # Select action based on current policy
+    @torch.no_grad
+    def choose_action(self, state: np.ndarray, evaluate: bool=False) -> np.ndarray:
+        #? with torch.cuda.amp.autocast(enabled=self.use_amp): 
+            state = np.array(state).reshape(-1)  # Ensure state is a 1D array
+            state_tensor = torch.as_tensor(state, dtype=torch.float32).to(self.device) # Convert state to tensor and move to device
+            state_tensor = state_tensor.unsqueeze(0)  # Add batch dimension
+            
+            if evaluate:
+                # Use deterministic mean action for evaluation
+                sampled_action, _, mean_action = self.actor.sample(state_tensor)
+                action = mean_action
+            else:
+                # Use stochastic sampled action for exploration
+                action, _, _ = self.actor.sample(state_tensor)
+
+            return action.squeeze(0).cpu().detach().numpy() # Remove batch dimension and convert to numpy array
+        
     # Update the SAC agent
     def train(self) -> None:
         
@@ -189,13 +279,14 @@ class SAC:
         done = torch.FloatTensor(done).to(self.device)
 
         # Update Critic networks
-        with torch.no_grad(): # No gradient calculation for target
+        with torch.no_grad(): #?, torch.cuda.amp.autocast(enabled=self.use_amp):
             next_action, next_log_prob, _ = self.actor.sample(next_state)
             target_q1 = self.critic_target1(next_state, next_action)
             target_q2 = self.critic_target2(next_state, next_action)
             target_q = reward + (1 - done) * self.gamma * (torch.min(target_q1, target_q2) - self.alpha * next_log_prob)
 
-        # Current Q estimates
+        #? with torch.cuda.amp.autocast(enabled=self.use_amp):
+            # Current Q estimates
         current_q1 = self.critic1(state, action)
         current_q2 = self.critic2(state, action)
 
@@ -204,34 +295,41 @@ class SAC:
         critic1_loss = self.mse_loss(current_q1, target_q)
         critic2_loss = self.mse_loss(current_q2, target_q)
 
-        # Optimize the Critic1 network
-        self.critic1_optimizer.zero_grad()
-        critic1_loss.backward()
-        self.critic1_optimizer.step()
+        # Optimize critic using _optimize
+        self._optimize(loss = critic1_loss, 
+                       optimizer = self.critic1_optimizer, 
+                       parameters = self.critic1.parameters(), 
+                       max_grad_norm=self.max_grad_norm_critic,
+                       log_grad_norm=self.log_grad_norm)
 
-        # Optimize the Critic2 network
-        self.critic2_optimizer.zero_grad()
-        critic2_loss.backward()
-        self.critic2_optimizer.step()
+        self._optimize(loss = critic2_loss, 
+                       optimizer = self.critic2_optimizer, 
+                       parameters = self.critic2.parameters(), 
+                       max_grad_norm=self.max_grad_norm_critic,
+                       log_grad_norm=self.log_grad_norm)
 
         # Update Actor network
+        #? with torch.cuda.amp.autocast(enabled=self.use_amp):
 
         # Get new actions and log probabilities for the current states 
         new_action, log_prob, _ = self.actor.sample(state)
-        
+            
         # Q values for the new actions 
         q1_new_action = self.critic1(state, new_action)
         q2_new_action = self.critic2(state, new_action)
-        
+            
         # Minimum Q value for the new actions
         q_new_action = torch.min(q1_new_action, q2_new_action)
 
         # Compute Actor loss
         actor_loss = (self.alpha * log_prob - q_new_action).mean()
 
-        self.actor_optimizer.zero_grad()
-        actor_loss.backward()
-        self.actor_optimizer.step()
+        self._optimize(loss = actor_loss, 
+                       optimizer = self.actor_optimizer, 
+                       parameters = self.actor.parameters(), 
+                       max_grad_norm=self.max_grad_norm_actor,
+                       log_grad_norm=self.log_grad_norm)
+
 
         # Update entropy coefficient alpha if using automatic entropy tuning
         if self.auto_entropy:
@@ -240,14 +338,17 @@ class SAC:
             # We use .detach() on lp because we are optimizing alpha, not the actor here.
             alpha_loss = -(self.log_alpha * (log_prob + self.target_entropy).detach()).mean()
 
-            # Optimize alpha
-            self.alpha_optimizer.zero_grad()
-            alpha_loss.backward()
-            self.alpha_optimizer.step()
+            self._optimize(
+                loss=alpha_loss,
+                optimizer=self.alpha_optimizer,
+                parameters=[self.log_alpha],
+                max_grad_norm=self.max_grad_norm_alpha,
+                log_grad_norm=self.log_grad_norm
+            )
 
             # Update alpha value
             self.alpha = self.log_alpha.exp()
-            
+        
         # Soft update target networks
         self._soft_update(self.critic1, self.critic_target1)
         self._soft_update(self.critic2, self.critic_target2)
