@@ -4,10 +4,10 @@ import torch
 import torch.nn as nn 
 import torch.optim as optim # Optimization algorithms
 import numpy as np 
-from ursula.buffers import Buffer, ReplayBuffer
-from ursula.networks import ACTOR_REGISTRY, CRITIC_REGISTRY
-from ursula.networks import Critic, GaussianActor as Actor
-from ursula.networks import BaseValueFunction, BasePolicy
+from obsolarc.buffers import Buffer, ReplayBuffer
+from obsolarc.networks import ACTOR_REGISTRY, CRITIC_REGISTRY
+from obsolarc.networks import Critic, GaussianActor as Actor
+from obsolarc.networks import BaseValueFunction, BasePolicy
 
 #TODO: actor is Actor or BasePolicy? Define the difference between this classes.
 
