@@ -1,9 +1,9 @@
 import gymnasium as gym # Gymnasium for environments
 from gymnasium.spaces import Box
 import numpy as np
-from ursula.sac import SAC
+from obsolarc.sac import SAC
 import highway_env
-from ursula.wrappers.wrappers import SACHighwayWrapper
+from obsolarc.wrappers.wrappers import SACHighwayWrapper
 
 if __name__ == "__main__":
 
