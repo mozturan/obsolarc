@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     env = gym.make('racetrack-v0', render_mode='human', config=config)
     # env = SACHighwayWrapper(env)
-    env = MultiFeatureWrapper(env, info_keys=["speed"])
+    env = MultiFeatureWrapper(env, stack_size=4, include_prev_action=True, info_keys=["speed"])
 
 
     # Get maximum action value
@@ -62,10 +62,10 @@ if __name__ == "__main__":
                      max_action=max_action,
                      critic_lr=0.003,
                      actor_lr=0.003,
-                     batch_size=64,
-                     min_buffer_size=100,
-                     hidden_sizes=[256, 256],
-                     auto_entropy=True) # Initialize SAC agent
+                     batch_size=256,
+                     min_buffer_size=500,
+                     hidden_sizes=[512, 512],
+                     auto_entropy=False) # Initialize SAC agent
 
     state, _ = env.reset() # Reset environment
     action = agent.choose_action(state) # Choose action using the agent
