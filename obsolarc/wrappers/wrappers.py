@@ -18,13 +18,6 @@ class Wrapper(ABC, gym.Wrapper):
 class SACHighwayWrapper(Wrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
-
-        # self.config = config or {}
-        
-        # Initialize the environment with the given configuration
-        #! In this case i can't set new obs shape correctly idk why
-        # self._init_env()
-
         
         original_obs_shape = env.observation_space.shape
         if isinstance(original_obs_shape, tuple):
@@ -33,14 +26,6 @@ class SACHighwayWrapper(Wrapper):
         else:
             raise ValueError("env.observation_space.shape is not a tuple. Make sure your environment uses continuous states.")
                                 
-    # def _init_env(self):
-    #     # Update the environment's configuration with the provided config
-    #     config = getattr(self.env.unwrapped, 'config', None)
-    #     if config is not None:
-    #         config.update(self.config)
-    #     else:
-    #         raise ValueError("The environment does not have a 'config' attribute. Make sure your environment is compatible with this wrapper.")
-
     def step(self, action: Any) -> tuple[Any, float, bool, bool, dict[str, Any]]:
         obs, reward, terminated, truncated, info = self.env.step(action)
         return self._observation(obs, info), float(reward), terminated, truncated, info
@@ -63,8 +48,8 @@ class SACHighwayWrapper(Wrapper):
         obs = np.concatenate((obs, [info]), axis=0)
         return obs
 
-class MultiFeatureWrapper(gym.ObservationWrapper):
-    def __init__(self, env, stack_size=4, include_prev_action=True, info_keys=None):
+class MultiFeatureWrapper(Wrapper):
+    def __init__(self, env, stack_size: int =4, include_prev_action: bool =True, info_keys=None):
         super().__init__(env)
         self.stack_size = stack_size
         self.include_prev_action = include_prev_action
@@ -72,19 +57,20 @@ class MultiFeatureWrapper(gym.ObservationWrapper):
         
         # 1. Start with the original observation shape
         # Assuming a Box space for vector observations
-        orig_shape = env.observation_space.shape[0]
-        
+        orig_shape = env.observation_space.shape
+        orig_shape = int(np.prod(orig_shape))
+
         # 2. Calculate the stacked dimension
         # New shape = (Original * Stack Count)
         new_dim = orig_shape * self.stack_size
         
-        # 3. Add dimension for previous action
+        # 3. Add dimension for previous action(s)
         if self.include_prev_action:
             action_dim = 1
             if isinstance(env.action_space, spaces.Box):
-                action_dim = env.action_space.shape[0]
+                action_dim = env.action_space.shape[0] * self.stack_size
             elif isinstance(env.action_space, spaces.Discrete):
-                action_dim = 1 # Or use env.action_space.n if one-hot encoding
+                action_dim = env.action_space.n * self.stack_size
             
             new_dim += action_dim
             

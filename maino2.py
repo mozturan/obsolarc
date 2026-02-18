@@ -3,7 +3,7 @@ from gymnasium.spaces import Box
 import numpy as np
 from obsolarc.sac import SAC
 import highway_env
-from obsolarc.wrappers.wrappers import SACHighwayWrapper
+from obsolarc.wrappers.wrappers import SACHighwayWrapper, MultiFeatureWrapper
 
 if __name__ == "__main__":
 
@@ -47,7 +47,8 @@ if __name__ == "__main__":
                         }
 
     env = gym.make('racetrack-v0', render_mode='human', config=config)
-    env = SACHighwayWrapper(env)
+    # env = SACHighwayWrapper(env)
+    env = MultiFeatureWrapper(env)
 
 
     # Get maximum action value
