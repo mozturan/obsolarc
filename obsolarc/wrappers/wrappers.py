@@ -49,20 +49,25 @@ class SACHighwayWrapper(Wrapper):
         return obs
 
 class MultiFeatureWrapper(Wrapper):
-    def __init__(self, env, stack_size: int =4, include_prev_action: bool =True, info_keys=None):
+    def __init__(self, env, stack_size: int =2, include_prev_action: bool =True, info_keys=None):
         super().__init__(env)
         self.stack_size = stack_size
         self.include_prev_action = include_prev_action
         self.info_keys = info_keys or []
+
+        self._obs_reshaper(env=env)
         
+
+    def _obs_reshaper(self, env) -> None:
+
         # 1. Start with the original observation shape
         # Assuming a Box space for vector observations
-        orig_shape = env.observation_space.shape
-        orig_shape = int(np.prod(orig_shape))
+        org_observation_shape = env.observation_space.shape
+        observation_shape = int(np.prod(org_observation_shape))
 
         # 2. Calculate the stacked dimension
         # New shape = (Original * Stack Count)
-        new_dim = orig_shape * self.stack_size
+        new_observation_dim = observation_shape * self.stack_size
         
         # 3. Add dimension for previous action(s)
         if self.include_prev_action:
@@ -72,15 +77,20 @@ class MultiFeatureWrapper(Wrapper):
             elif isinstance(env.action_space, spaces.Discrete):
                 action_dim = env.action_space.n * self.stack_size
             
-            new_dim += action_dim
+            new_observation_dim += action_dim
             
         # 4. Add dimensions for info keys (assuming they are scalar floats)
-        new_dim += len(self.info_keys)
-        
-        # 5. Update the space!
-        self.observation_space = spaces.Box(
+        new_observation_dim += len(self.info_keys)
+
+        if isinstance(org_observation_shape, tuple):
+
+            self.observation_space = spaces.Box(
             low=-np.inf, 
             high=np.inf, 
-            shape=(new_dim,), 
-            dtype=np.float32
-        )
+            shape=(new_observation_dim,), 
+            dtype=np.float32)
+            
+        else:
+            raise ValueError(
+                "env.observation_space.shape is not a tuple. " \
+                "Make sure your environment uses continuous states.")

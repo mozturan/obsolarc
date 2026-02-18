@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     env = gym.make('racetrack-v0', render_mode='human', config=config)
     # env = SACHighwayWrapper(env)
-    env = MultiFeatureWrapper(env)
+    env = MultiFeatureWrapper(env, info_keys=["speed"])
 
 
     # Get maximum action value
