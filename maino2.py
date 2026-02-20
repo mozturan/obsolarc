@@ -3,7 +3,7 @@ from gymnasium.spaces import Box
 import numpy as np
 from obsolarc.sac import SAC
 import highway_env
-from obsolarc.wrappers.wrappers import SACHighwayWrapper, MultiFeatureWrapper
+from obsolarc.wrappers.wrappers import SACHighwayWrapper, StackWrapper
 
 if __name__ == "__main__":
 
@@ -48,7 +48,7 @@ if __name__ == "__main__":
 
     env = gym.make('racetrack-v0', render_mode='human', config=config)
     # env = SACHighwayWrapper(env)
-    env = MultiFeatureWrapper(env, stack_size=2, include_prev_action=True, info_keys=["speed"])
+    env = StackWrapper(env, stack_size=2, include_prev_action=True, info_keys=["speed"])
 
 
     # Get maximum action value
@@ -81,7 +81,7 @@ if __name__ == "__main__":
         state = next_state # Update state
         action = agent.choose_action(state) # Choose next action
         agent.train() # Train the agent
-        # print(f"Step {i+1}")
+        print(f"Step {i+1}")
         if done:
             state, _ = env.reset() # Reset environment if done
 

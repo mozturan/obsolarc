@@ -5,7 +5,6 @@ from abc import ABC
 from gymnasium import spaces
 from collections import deque
 
-
 class Wrapper(ABC, gym.Wrapper):
     def __init__(self, env: gym.Env):
         super().__init__(env)
@@ -50,7 +49,7 @@ class SACHighwayWrapper(Wrapper):
         obs = np.concatenate((obs, [info]), axis=0)
         return obs
 
-class MultiFeatureWrapper(Wrapper):
+class StackWrapper(Wrapper):
     def __init__(self, env, stack_size: int =2, include_prev_action: bool =True, info_keys=None):
         super().__init__(env)
         self.stack_size = stack_size
