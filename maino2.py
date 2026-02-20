@@ -49,25 +49,17 @@ if __name__ == "__main__":
     env = gym.make('racetrack-v0', render_mode='human', config=config)
     env = StackWrapper(env, stack_size=2, include_prev_action=True, info_keys=["speed"])
 
-
-    # Get maximum action value
-    if isinstance(env.action_space, Box):
-        max_action = float(env.action_space.high[0])  # Maximum action value
-    else:
-        raise ValueError("env.action_space is not a Box space. Make sure your environment uses continuous actions.")
-
     # agent = SACAgent(state_shape, action_shape, max_action=max_action) # Initialize SAC agent
     agent = SAC(     env=env, 
-                     max_action=max_action,
+                     max_action=env.max_action,
                      critic_lr=0.003,
                      actor_lr=0.003,
                      batch_size=256,
                      min_buffer_size=500,
                      hidden_sizes=[512, 512],
-                     auto_entropy=False) # Initialize SAC agent
+                     auto_entropy=True) # Initialize SAC agent
 
     episodes = 5000
-
     for episode in range(episodes):
         state, _ = env.reset()
         done = False
@@ -85,6 +77,6 @@ if __name__ == "__main__":
             action = agent.choose_action(state) # Choose next action
             agent.train() # Train the agent        
         
-        print("Episode : " episode)
+        print("Episode : ", episode)
     
     env.close()

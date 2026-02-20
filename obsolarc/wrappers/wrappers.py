@@ -56,6 +56,8 @@ class StackWrapper(Wrapper):
         self.include_prev_action = include_prev_action
         self.info_keys = info_keys or []
 
+        self.max_action = float(env.action_space.high[0])  # Maximum action value
+
         # Initialize deques to hold past observations and actions
         self._obs_buffer = deque([], maxlen=stack_size)
         self._action_buffer = deque([], maxlen=stack_size)
