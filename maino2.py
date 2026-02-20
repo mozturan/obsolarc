@@ -70,11 +70,10 @@ if __name__ == "__main__":
 
     for episode in range(episodes):
         state, _ = env.reset()
-        action = agent.choose_action(state) # Choose action using the agent
-        next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
-        done = terminated or truncated or info.get('on_road_reward', 0)
+        done = False
 
         while not done:
+            action = agent.choose_action(state) # Choose action using the agent
             next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
             done = terminated or truncated or info.get('on_road_reward', 0)
             agent.replay_buffer.store_transition(state, 
@@ -86,4 +85,6 @@ if __name__ == "__main__":
             action = agent.choose_action(state) # Choose next action
             agent.train() # Train the agent        
         
+        print("Episode : " episode)
+    
     env.close()
