@@ -47,7 +47,6 @@ if __name__ == "__main__":
                         }
 
     env = gym.make('racetrack-v0', render_mode='human', config=config)
-    # env = SACHighwayWrapper(env)
     env = StackWrapper(env, stack_size=2, include_prev_action=True, info_keys=["speed"])
 
 
@@ -67,22 +66,24 @@ if __name__ == "__main__":
                      hidden_sizes=[512, 512],
                      auto_entropy=False) # Initialize SAC agent
 
-    state, _ = env.reset() # Reset environment
-    action = agent.choose_action(state) # Choose action using the agent
+    episodes = 5000
 
-    for i in range(50000): # Run for 5 steps
+    for episode in range(episodes):
+        state, _ = env.reset()
+        action = agent.choose_action(state) # Choose action using the agent
         next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
         done = terminated or truncated or info.get('on_road_reward', 0)
-        agent.replay_buffer.store_transition(state, 
-                                             action, 
-                                             float(reward), 
-                                             next_state, 
-                                             done) # Store transition in replay buffer
-        state = next_state # Update state
-        action = agent.choose_action(state) # Choose next action
-        agent.train() # Train the agent
-        print(f"Step {i+1}")
-        if done:
-            state, _ = env.reset() # Reset environment if done
 
+        while not done:
+            next_state, reward, terminated, truncated, info = env.step(action) # Take action in environment
+            done = terminated or truncated or info.get('on_road_reward', 0)
+            agent.replay_buffer.store_transition(state, 
+                                                action, 
+                                                float(reward), 
+                                                next_state, 
+                                                done) # Store transition in replay buffer
+            state = next_state # Update state
+            action = agent.choose_action(state) # Choose next action
+            agent.train() # Train the agent        
+        
     env.close()
