@@ -17,13 +17,15 @@ if __name__ == "__main__":
                                              "cos_h", "sin_h",
                                              "heading", "long_off",
                                              "lat_off", "ang_off"],
-                                             "grid_size": [[-18, 18], [-18, 18]],
                                 "features_range": {
                                     "x": [-100, 100],
                                     "y": [-100, 100],
                                     "vx": [-20, 20],
                                     "vy": [-20, 20]
-                                },                            },
+                                },        
+                                "absolute": False,
+                                "order": "sorted"
+                                            },
                             "action": {
                                 "type": "ContinuousAction",
                                 "longitudinal": True,
