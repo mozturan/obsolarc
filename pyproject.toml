@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obsolarc"
+version = "0.1.0"
+description = "A custom reinforcement learning codebase"
+dependencies = [
+"numpy>=2.2.6",
+    "gymnasium~=1.2.3",
+    "torch>=2.10.0",
+    highway_env
+    ]
+
+[tool.setuptools]
+packages = ["obsolarc"]
